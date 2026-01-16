@@ -5,12 +5,19 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 const { Server } = require("socket.io");
+const https = require("https");
+
+// IMPORTANT for Codeforces TLS
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const app = express();
 const PORT = 5001;
 
 app.use(cors());
 app.use(express.json());
+
+// Codeforces persistent agent
+const agent = new https.Agent({ keepAlive: true });
 
 /* ---------------- BASIC TEST ---------------- */
 app.get("/", (req, res) => {
@@ -43,6 +50,35 @@ app.post("/run", (req, res) => {
   );
 });
 
+/* ---------------- CODEFORCES META API ---------------- */
+app.get("/cf/meta", async (req, res) => {
+  const { contestId, index } = req.query;
+
+  try {
+    const response = await fetch(
+      `https://codeforces.com/api/problemset.problem?contestId=${contestId}&index=${index}`,
+      {
+        agent,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+          "Accept": "application/json",
+          "Connection": "keep-alive",
+        },
+      }
+    );
+
+    const data = await response.json();
+    return res.json(data);
+
+  } catch (err) {
+    console.error("CF error:", err);
+    return res.status(500).json({
+      status: "FAILED",
+      error: "CF fetch failed",
+    });
+  }
+});
+
 /* ---------------- SOCKET.IO SETUP ---------------- */
 const server = http.createServer(app);
 
@@ -60,18 +96,23 @@ io.on("connection", (socket) => {
     socket.join(roomId);
     console.log(`Socket ${socket.id} joined room ${roomId}`);
   });
-  
+
   socket.on("draw", ({ roomId, x0, y0, x1, y1, color }) => {
     socket.to(roomId).emit("draw", { x0, y0, x1, y1, color });
   });
-  
+
   socket.on("clear-board", (roomId) => {
     socket.to(roomId).emit("clear-board");
   });
-  
+
   socket.on("code-change", ({ roomId, code }) => {
     socket.to(roomId).emit("code-update", code);
   });
+
+  socket.on("open-problem", ({ roomId, link }) => {
+    socket.to(roomId).emit("open-problem", link);
+  });
+ 
 
   socket.on("disconnect", () => {
     console.log("🔴 User disconnected:", socket.id);

@@ -7,6 +7,14 @@ function Room() {
   const navigate = useNavigate();
   const { roomId } = useParams();
   const isRemoteUpdate = useRef(false);
+  const fetchCFMeta = async (contestId, index) => {
+    const res = await fetch(
+      `https://codeforces.com/api/problemset.problem?contestId=${contestId}&index=${index}`
+    );
+    const data = await res.json();
+    return data.result.problem;
+  };
+ 
 
   /* ---------------- PARSER ---------------- */
   const parseCodeforcesLink = (link) => {
@@ -94,6 +102,11 @@ function Room() {
     socket.on("clear-board", () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     });
+
+    socket.on("open-problem", (link) => {
+      window.open(link, "_blank");
+    });
+   
 
     return () => {
       socket.off("draw");
@@ -220,15 +233,13 @@ function Room() {
               />
               <button
                 onClick={() => {
-                  const parsed = parseCodeforcesLink(questionLink);
-                  if (!parsed) return;
-                  setParsedQuestion(parsed);
-                  setProblemData({
-                    name: "Dummy Problem Name",
-                    rating: 800,
-                    tags: ["implementation", "math"],
-                  });
+                  if (!questionLink) return;
+                  socket.emit("open-problem", { roomId, link: questionLink, sender: socket.id });
+                  window.open(questionLink, "_blank");
+
                 }}
+               
+               
                 className="bg-purple-600 text-white px-4 rounded text-sm"
               >
                 Load
