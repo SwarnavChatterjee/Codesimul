@@ -209,21 +209,6 @@ function Room() {
             </div>
           </div>
 
-          {/* Problem Display */}
-          <div className="bg-slate-900 rounded p-4 text-slate-300 text-sm">
-            {problemData ? (
-              <>
-                <p className="text-white font-semibold mb-2">{problemData.name}</p>
-                <p>Rating: {problemData.rating}</p>
-                <p className="text-slate-400 text-xs">
-                  Tags: {problemData.tags.join(", ")}
-                </p>
-              </>
-            ) : (
-              <p className="text-slate-400">Paste a Codeforces link and click Load</p>
-            )}
-          </div>
-
           {/* Whiteboard */}
           <div className="flex-1 min-h-0 p-4 bg-slate-800">
             <div className="flex justify-between mb-2">
