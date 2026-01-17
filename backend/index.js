@@ -85,13 +85,13 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: [
-      "https://your-frontend.vercel.app",
-      "http://localhost:3000"
+      "http://localhost:3000",
+      "https://codesimul.vercel.app" // deployed frontend
     ],
     methods: ["GET", "POST"]
-    
-  },
+  }
 });
+
 
 io.on("connection", (socket) => {
   console.log("🟢 User connected:", socket.id);

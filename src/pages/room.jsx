@@ -146,18 +146,27 @@ function Room() {
   /* ---------------- CODE RUNNER ---------------- */
   const handleRunCode = async () => {
     setOutput("Running code...");
+  
+    const BACKEND_URL =
+      process.env.NODE_ENV === "production"
+        ? "https://your-backend.onrender.com"   // <-- replace after deploy
+        : "http://localhost:5001";
+  
     try {
-      const res = await fetch("http://localhost:5001/run", {
+      const res = await fetch(`${BACKEND_URL}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, input }),
       });
+  
       const data = await res.json();
       setOutput(data.output || "No output");
-    } catch {
+    } catch (err) {
+      console.error(err);
       setOutput("Error connecting to backend");
     }
   };
+  
 
   const handleLeaveRoom = () => {
     if (window.confirm("Leave the room?")) navigate("/");
