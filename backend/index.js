@@ -11,16 +11,9 @@ const https = require("https");
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const app = express();
-const PORT = process.env.PORT || 5001;
+const PORT = 5001;
 
-app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    "codesimul-4rxt.vercel.app"
-  ],
-  methods: ["GET", "POST"],
-}));
-
+app.use(cors());
 app.use(express.json());
 
 // Codeforces persistent agent
@@ -34,7 +27,7 @@ app.get("/", (req, res) => {
 /* ---------------- C++ RUN API ---------------- */
 app.post("/run", (req, res) => {
   const { code, input } = req.body;
-
+  
   if (!code) {
     return res.json({ output: "No code provided" });
   }
@@ -60,6 +53,13 @@ app.post("/run", (req, res) => {
 /* ---------------- CODEFORCES META API ---------------- */
 app.get("/cf/meta", async (req, res) => {
   const { contestId, index } = req.query;
+  
+  if (!contestId || !index) {
+    return res.status(400).json({
+      status: "FAILED",
+      error: "Missing contestId or index",
+    });
+  }
 
   try {
     const response = await fetch(
@@ -73,10 +73,17 @@ app.get("/cf/meta", async (req, res) => {
         },
       }
     );
-
+    
     const data = await response.json();
+    
+    if (data.status !== "OK") {
+      return res.status(404).json({
+        status: "FAILED",
+        error: "Problem not found",
+      });
+    }
+    
     return res.json(data);
-
   } catch (err) {
     console.error("CF error:", err);
     return res.status(500).json({
@@ -88,25 +95,21 @@ app.get("/cf/meta", async (req, res) => {
 
 /* ---------------- SOCKET.IO SETUP ---------------- */
 const server = http.createServer(app);
-
 const io = new Server(server, {
   cors: {
-    origin: [
-      "http://localhost:3000", // local dev
-      "codesimul-4rxt.vercel.app" // deployed frontend
-    ],
+    origin: "http://localhost:3000",
     methods: ["GET", "POST"],
   },
 });
-
-
 
 io.on("connection", (socket) => {
   console.log("🟢 User connected:", socket.id);
 
   socket.on("join-room", (roomId) => {
     socket.join(roomId);
-    console.log(`Socket ${socket.id} joined room ${roomId}`);
+    console.log(`✅ Socket ${socket.id} joined room ${roomId}`);
+    const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
+    console.log(`   Room ${roomId} now has ${roomSize} user(s)`);
   });
 
   socket.on("draw", ({ roomId, x0, y0, x1, y1, color }) => {
@@ -121,10 +124,11 @@ io.on("connection", (socket) => {
     socket.to(roomId).emit("code-update", code);
   });
 
-  socket.on("open-problem", ({ roomId, link }) => {
-    socket.to(roomId).emit("open-problem", link);
+  // FIXED: Broadcast to everyone INCLUDING sender, but send sender ID
+  socket.on("open-problem", ({ roomId, link, sender }) => {
+    console.log(`📢 Broadcasting open-problem to room ${roomId}:`, { link, sender });
+    io.to(roomId).emit("open-problem", { link, sender });
   });
- 
 
   socket.on("disconnect", () => {
     console.log("🔴 User disconnected:", socket.id);

@@ -7,6 +7,58 @@ function Room() {
   const navigate = useNavigate();
   const { roomId } = useParams();
   const isRemoteUpdate = useRef(false);
+  const mySocketId = useRef(null);
+  
+  const fetchCFMeta = async (contestId, index) => {
+    try {
+      const res = await fetch(
+        `http://localhost:5001/cf/meta?contestId=${contestId}&index=${index}`
+      );
+      const data = await res.json();
+      console.log("CF API Response:", data);
+      
+      if (data.status === "OK" && data.result && data.result.problem) {
+        return data.result.problem;
+      } else {
+        console.error("Invalid CF response:", data);
+        return null;
+      }
+    } catch (err) {
+      console.error("CF fetch error:", err);
+      return null;
+    }
+  };
+
+  /* ---------------- PARSER ---------------- */
+  const parseCodeforcesLink = (link) => {
+    try {
+      const url = new URL(link);
+      const path = url.pathname;
+      const parts = path.split("/").filter(Boolean);
+
+      if (parts[0] === "problemset" && parts[1] === "problem") {
+        return {
+          contestId: parts[2],
+          index: parts[3],
+        };
+      }
+
+      if (parts[0] === "contest" && parts[2] === "problem") {
+        return {
+          contestId: parts[1],
+          index: parts[3],
+        };
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  /* ---------------- CF STATE ---------------- */
+  const [parsedQuestion, setParsedQuestion] = useState(null);
+  const [problemData, setProblemData] = useState(null);
 
   /* ---------------- Layout ---------------- */
   const [leftWidth, setLeftWidth] = useState(40);
@@ -18,6 +70,7 @@ function Room() {
   const [output, setOutput] = useState("");
   const [timer, setTimer] = useState("00:00");
   const [input, setInput] = useState("");
+  const [incomingProblem, setIncomingProblem] = useState(null);
 
   const members = [
     { id: 1, name: "You", color: "bg-green-500" },
@@ -31,14 +84,27 @@ function Room() {
   const editorRef = useRef(null);
   const [strokeColor, setStrokeColor] = useState("black");
 
-  /* ---------------- SOCKET SETUP ---------------- */
+  /* ---------------- SOCKET ---------------- */
   useEffect(() => {
     socket.connect();
-    socket.emit("join-room", roomId);
-    return () => socket.disconnect();
+    
+    socket.on("connect", () => {
+      console.log("✅ Socket connected with ID:", socket.id);
+      socket.emit("join-room", roomId);
+      mySocketId.current = socket.id;
+    });
+
+    socket.on("disconnect", () => {
+      console.log("❌ Socket disconnected");
+    });
+    
+    return () => {
+      socket.off("connect");
+      socket.off("disconnect");
+      socket.disconnect();
+    };
   }, [roomId]);
 
-  /* ---------------- Code Sync ---------------- */
   useEffect(() => {
     socket.on("code-update", (newCode) => {
       isRemoteUpdate.current = true;
@@ -48,7 +114,6 @@ function Room() {
     return () => socket.off("code-update");
   }, []);
 
-  /* ---------------- Whiteboard Sync ---------------- */
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -66,8 +131,15 @@ function Room() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
     });
 
-    socket.on("open-problem", (link) => {
-      window.open(link, "_blank");
+    // FIXED: Store incoming problem instead of auto-opening (popup blocker prevention)
+    socket.on("open-problem", ({ link, sender }) => {
+      console.log("📩 Received open-problem event:", { link, sender, myId: socket.id });
+      if (sender !== socket.id) {
+        console.log("🚀 Setting incoming problem notification");
+        setIncomingProblem(link);
+      } else {
+        console.log("⏭️ Skipping - I sent this");
+      }
     });
 
     return () => {
@@ -77,7 +149,6 @@ function Room() {
     };
   }, []);
 
-  /* ---------------- Canvas Resize ---------------- */
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -145,29 +216,60 @@ function Room() {
     socket.emit("clear-board", roomId);
   };
 
+  /* ---------------- LOAD PROBLEM ---------------- */
+  const handleLoadProblem = async () => {
+    console.log("Load clicked, questionLink =", questionLink);
+    
+    if (!questionLink || questionLink.trim() === "") {
+      alert("Please paste a valid problem link");
+      return;
+    }
+
+    // Validate URL format
+    const trimmedLink = questionLink.trim();
+    if (!trimmedLink.startsWith("http://") && !trimmedLink.startsWith("https://")) {
+      alert("Please enter a valid URL starting with http:// or https://");
+      return;
+    }
+
+    console.log("Opening link:", trimmedLink);
+
+    // Parse the link
+    const parsed = parseCodeforcesLink(trimmedLink);
+    
+    if (parsed) {
+      // It's a Codeforces link - fetch metadata
+      try {
+        const data = await fetchCFMeta(parsed.contestId, parsed.index);
+        if (data) {
+          setProblemData(data);
+          setParsedQuestion(parsed);
+        }
+      } catch (err) {
+        console.error("Failed to fetch CF metadata:", err);
+      }
+    }
+
+    // Open the problem link for yourself ONLY
+    window.open(trimmedLink, "_blank");
+    
+    // Broadcast to other users (with sender ID so they know who sent it)
+    console.log("📤 Emitting open-problem:", { roomId, link: trimmedLink, sender: socket.id });
+    socket.emit("open-problem", { roomId, link: trimmedLink, sender: socket.id });
+  };
+
   /* ---------------- CODE RUNNER ---------------- */
   const handleRunCode = async () => {
     setOutput("Running code...");
-
-    const BACKEND_URL =
-      process.env.NODE_ENV === "production"
-        ? "https://codesimul-1.onrender.com"
-        : "http://localhost:5001";
-
-    const FALLBACK_URL = "https://codesimul-1.onrender.com";
-    const FINAL_URL = BACKEND_URL || FALLBACK_URL;
-
     try {
-      const res = await fetch(`${FINAL_URL}/run`, {
+      const res = await fetch("http://localhost:5001/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, input }),
       });
-
       const data = await res.json();
       setOutput(data.output || "No output");
-    } catch (err) {
-      console.error(err);
+    } catch {
       setOutput("Error connecting to backend");
     }
   };
@@ -176,9 +278,32 @@ function Room() {
     if (window.confirm("Leave the room?")) navigate("/");
   };
 
-  /* ---------------- UI ---------------- */
   return (
     <div className="h-screen w-screen bg-slate-900 flex overflow-hidden">
+      {/* Incoming Problem Notification */}
+      {incomingProblem && (
+        <div className="absolute top-0 left-0 right-0 z-50 bg-purple-600 text-white p-3 flex items-center justify-between shadow-lg">
+          <span className="font-semibold">📝 Teammate loaded a new problem!</span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                window.open(incomingProblem, "_blank");
+                setIncomingProblem(null);
+              }}
+              className="bg-white text-purple-600 px-4 py-1 rounded font-semibold hover:bg-gray-100"
+            >
+              Open Problem
+            </button>
+            <button
+              onClick={() => setIncomingProblem(null)}
+              className="bg-purple-700 px-3 py-1 rounded hover:bg-purple-800"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* LEFT */}
       <div className="flex border-r border-slate-700" style={{ width: `${leftWidth}%` }}>
         {/* Members */}
@@ -209,22 +334,36 @@ function Room() {
               />
               <button
                 onClick={() => {
-                  if (!questionLink) return;
-                  socket.emit("open-problem", { roomId, link: questionLink, sender: socket.id });
-                  window.open(questionLink, "_blank");
+                  console.log("🔘 BUTTON CLICKED!");
+                  handleLoadProblem();
                 }}
-                className="bg-purple-600 text-white px-4 rounded text-sm"
+                className="bg-purple-600 text-white px-4 rounded text-sm hover:bg-purple-700"
               >
                 Load
               </button>
             </div>
           </div>
 
+          {/* Problem Display */}
+          <div className="bg-slate-900 rounded p-4 text-slate-300 text-sm">
+            {problemData ? (
+              <>
+                <p className="text-white font-semibold mb-2">{problemData.name}</p>
+                <p>Rating: {problemData.rating}</p>
+                <p className="text-slate-400 text-xs">
+                  Tags: {problemData.tags.join(", ")}
+                </p>
+              </>
+            ) : (
+              <p className="text-slate-400">Paste a Codeforces link and click Load</p>
+            )}
+          </div>
+
           {/* Whiteboard */}
           <div className="flex-1 min-h-0 p-4 bg-slate-800">
             <div className="flex justify-between mb-2">
               <span className="text-white font-semibold text-sm">Whiteboard</span>
-              <button onClick={clearBoard} className="text-xs text-red-400">
+              <button onClick={clearBoard} className="text-xs text-red-400 hover:text-red-300">
                 Clear
               </button>
             </div>
@@ -244,7 +383,11 @@ function Room() {
                   { c: "blue", cls: "bg-blue-500" },
                   { c: "green", cls: "bg-green-500" },
                 ].map(({ c, cls }) => (
-                  <button key={c} onClick={() => setStrokeColor(c)} className={`w-5 h-5 rounded border ${cls}`} />
+                  <button 
+                    key={c} 
+                    onClick={() => setStrokeColor(c)} 
+                    className={`w-5 h-5 rounded border-2 ${strokeColor === c ? 'border-yellow-400' : 'border-gray-300'} ${cls}`} 
+                  />
                 ))}
               </div>
             </div>
@@ -284,7 +427,7 @@ function Room() {
                 onChange={(e) => setTimer(e.target.value)}
                 className="bg-slate-700 text-white px-2 py-1 text-sm rounded w-20"
               />
-              <button onClick={handleLeaveRoom} className="bg-red-600 text-white px-3 py-1 rounded text-sm">
+              <button onClick={handleLeaveRoom} className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700">
                 Leave Room
               </button>
             </div>
@@ -353,7 +496,7 @@ function Room() {
           <div className="flex-1 min-h-0">
             <div className="flex justify-between mb-2">
               <span className="text-white font-semibold">Output</span>
-              <button onClick={handleRunCode} className="bg-green-600 text-white px-4 py-1 rounded text-sm">
+              <button onClick={handleRunCode} className="bg-green-600 text-white px-4 py-1 rounded text-sm hover:bg-green-700">
                 ▶ Run Code
               </button>
             </div>
