@@ -16,7 +16,7 @@ const PORT = process.env.PORT || 5001;
 app.use(cors({
   origin: [
     "http://localhost:3000",
-    "https://codesimul-4rxt-k02oye2se-ishaan302s-projects.vercel.app"
+    "codesimul-4rxt.vercel.app"
   ],
   methods: ["GET", "POST"],
 }));
@@ -93,7 +93,7 @@ const io = new Server(server, {
   cors: {
     origin: [
       "http://localhost:3000", // local dev
-      "https://codesimul-4rxt-k02oye2se-ishaan302s-projects.vercel.app" // deployed frontend
+      "codesimul-4rxt.vercel.app" // deployed frontend
     ],
     methods: ["GET", "POST"],
   },
