@@ -97,7 +97,7 @@ app.get("/cf/meta", async (req, res) => {
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: "*",
     methods: ["GET", "POST"],
   },
 });
@@ -134,6 +134,17 @@ io.on("connection", (socket) => {
     console.log("🔴 User disconnected:", socket.id);
   });
 });
+
+// ---------------- SERVE FRONTEND (PRODUCTION) ----------------
+const buildPath = path.join(__dirname, "..", "build");
+
+app.use(express.static(buildPath));
+
+// React routing fallback
+app.get("*", (req, res) => {
+  res.sendFile(path.join(buildPath, "index.html"));
+});
+
 
 /* ---------------- START SERVER ---------------- */
 server.listen(PORT, () => {
