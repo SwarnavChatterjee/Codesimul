@@ -11,7 +11,7 @@ const https = require("https");
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const app = express();
-const PORT = 5001;
+const PORT = process.env.PORT || 5001;
 
 app.use(cors());
 app.use(express.json());
@@ -137,5 +137,5 @@ io.on("connection", (socket) => {
 
 /* ---------------- START SERVER ---------------- */
 server.listen(PORT, () => {
-  console.log(`🚀 Backend running on http://localhost:${PORT}`);
+  console.log(`🚀 Backend running on port ${PORT}`);
 });
