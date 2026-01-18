@@ -20,9 +20,10 @@ app.use(express.json());
 const agent = new https.Agent({ keepAlive: true });
 
 /* ---------------- BASIC TEST ---------------- */
-app.get("/", (req, res) => {
+app.get("/api/health", (req, res) => {
   res.send("Backend is running");
 });
+
 
 /* ---------------- C++ RUN API ---------------- */
 app.post("/run", (req, res) => {
