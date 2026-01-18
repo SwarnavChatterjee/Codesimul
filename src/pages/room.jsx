@@ -12,8 +12,9 @@ function Room() {
   const fetchCFMeta = async (contestId, index) => {
     try {
       const res = await fetch(
-        `http://localhost:5001/cf/meta?contestId=${contestId}&index=${index}`
+        `/cf/meta?contestId=${contestId}&index=${index}`
       );
+      
       const data = await res.json();
       console.log("CF API Response:", data);
       
@@ -262,7 +263,8 @@ function Room() {
   const handleRunCode = async () => {
     setOutput("Running code...");
     try {
-      const res = await fetch("http://localhost:5001/run", {
+      const res = await fetch("/run",
+        {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, input }),
